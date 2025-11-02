@@ -2,6 +2,7 @@ import minecraft_launcher_lib
 import subprocess
 import os
 import json
+import queue
 import shutil
 import threading
 from tkinter import filedialog
@@ -207,22 +208,44 @@ def update_ram_label(value, ram_label):
     ram_in_mb = int(value)
     ram_label.configure(text=f"Custom RAM Allocation: {ram_in_mb} MB")
 
-def _launch_game_in_thread(minecraft_command, ui_elements):
+def _launch_game_in_thread(minecraft_command, update_queue):
     """
-    Esta función se ejecuta en un hilo separado para no bloquear la UI.
-    Contiene la llamada bloqueante a subprocess.run().
+    Que hace?
+
+    Esta función se ejecuta en un hilo separado y pone mensajes en la cola.
     """
     try:
         subprocess.run(minecraft_command)
-        ui_elements["app"].after(0, lambda: ui_elements["status_label"].configure(text="Game closed. Ready to play again!", text_color="green"))
+        update_queue.put("GAME_CLOSED")
     except Exception as e:
         print(f"An error occurred in the game thread: {e}")
-        ui_elements["app"].after(0, lambda: ui_elements["status_label"].configure(text=f"Error launching: {e}", text_color="red"))
+        update_queue.put(f"ERROR:{e}")
+
+def process_queue_updates(app, status_label, update_queue):
+    """
+    Que hace?
+
+    Revisa la cola en busca de mensajes y actualiza la UI de forma segura.
+    """
+    try:
+        message = update_queue.get_nowait()
+        if message == "GAME_CLOSED":
+            status_label.configure(text="Game closed. Ready to play again!", text_color="green")
+        elif message.startswith("ERROR:"):
+            error_details = message.split(":", 1)[1]
+            status_label.configure(text=f"Error launching: {error_details}", text_color="red")
+    except queue.Empty:
+        pass
+    finally:
+        app.after(100, lambda: process_queue_updates(app, status_label, update_queue))
 
 def launch_or_install_minecraft(ui_elements, all_versions, installed_ids):
     """
+    Que hace?
+    
     Función principal del botón "Jugar / Instalar". Ahora usa un hilo para lanzar el juego.
     """
+
     app = ui_elements["app"]
 
     username_entry = ui_elements["username_entry"]
@@ -236,16 +259,16 @@ def launch_or_install_minecraft(ui_elements, all_versions, installed_ids):
     username = username_entry.get()
     selected_display_version = version_variable.get()
     ram_mb = int(ram_slider.get())
-
     if not username:
         status_label.configure(text="Error: Username cannot be empty.", text_color="red")
         return
     version_id = selected_display_version.replace(" (Installed)", "")
-    if "Error al buscar" in version_id or not version_id:
+    if "Error" in version_id or not version_id:
         status_label.configure(text="Error: No valid version selected.", text_color="red")
         return
     config = load_configuration()
     save_configuration(username, config.get("last_skin_path", ""))
+
     if version_id not in installed_ids:
         try:
             status_label.configure(text=f"Installing {version_id}, please wait...", text_color="yellow")
@@ -258,6 +281,7 @@ def launch_or_install_minecraft(ui_elements, all_versions, installed_ids):
         except Exception as e:
             status_label.configure(text=f"Error during installation: {e}", text_color="red")
             return
+            
     options = {"username": username, "uuid": "", "token": "", "jvmArguments": [f"-Xmx{ram_mb}M", f"-Xms{ram_mb}M"]}
     java_args = java_entry.get()
     if java_args:
@@ -265,7 +289,12 @@ def launch_or_install_minecraft(ui_elements, all_versions, installed_ids):
     try:
         minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(version_id, MINECRAFT_DIRECTORY, options)
         status_label.configure(text=f"Launching Minecraft {version_id}...", text_color="green")
-        game_thread = threading.Thread(target=_launch_game_in_thread, args=(minecraft_command, ui_elements))
+        
+        update_queue = queue.Queue()
+        game_thread = threading.Thread(target=_launch_game_in_thread, args=(minecraft_command, update_queue))
         game_thread.start()
+        
+        app.after(100, lambda: process_queue_updates(app, status_label, update_queue))
+
     except Exception as e:
         status_label.configure(text=f"Error preparing launch: {e}", text_color="red")
