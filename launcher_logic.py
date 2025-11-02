@@ -3,6 +3,7 @@ import subprocess
 import os
 import json
 import shutil
+import threading
 from tkinter import filedialog
 import customtkinter
 from PIL import Image
@@ -215,11 +216,26 @@ def actualizar_label_ram(valor, label_ram):
     ram_en_mb = int(valor)
     label_ram.configure(text=f"Custom RAM Allocation: {ram_en_mb} MB")
 
+def _lanzar_juego_en_hilo(minecraft_command, ui_elements):
+    """
+    Esta función se ejecuta en un hilo separado para no bloquear la UI.
+    Contiene la llamada bloqueante a subprocess.run().
+    """
+    try:
+        subprocess.run(minecraft_command)
+        
+        # Una vez que el juego se cierra, actualizamos la UI de forma segura
+        ui_elements["app"].after(0, lambda: ui_elements["status_label"].configure(
+            text="El juego se ha cerrado. ¡Listo para jugar de nuevo!", text_color="green"))
+            
+    except Exception as e:
+        print(f"Ocurrió un error en el hilo del juego: {e}")
+        ui_elements["app"].after(0, lambda: ui_elements["status_label"].configure(
+            text=f"Error al lanzar: {e}", text_color="red"))
+
 def lanzar_o_instalar_minecraft(ui_elements):
     """
-    Que hace?
-    
-    Función principal del botón "Jugar / Instalar".
+    Función principal del botón "Jugar / Instalar". Ahora usa un hilo para lanzar el juego.
     """
     app = ui_elements["app"]
     username_entry = ui_elements["username_entry"]
@@ -249,11 +265,8 @@ def lanzar_o_instalar_minecraft(ui_elements):
         try:
             status_label.configure(text=f"Instalando {version_id}, por favor espera...", text_color="yellow")
             app.update_idletasks()
-            
             minecraft_launcher_lib.install.install_minecraft_version(version_id, MINECRAFT_DIRECTORY)
-            
             INSTALLED_VERSION_IDS.add(version_id)
-            
             status_label.configure(text=f"¡{version_id} instalado con éxito!", text_color="green")
             app.update_idletasks()
         except Exception as e:
@@ -261,8 +274,7 @@ def lanzar_o_instalar_minecraft(ui_elements):
             return
 
     options = {
-        "username": usuario,
-        "uuid": "", "token": "",
+        "username": usuario, "uuid": "", "token": "",
         "jvmArguments": [f"-Xmx{ram_mb}M", f"-Xms{ram_mb}M"]
     }
     java_args = java_entry.get()
@@ -271,11 +283,11 @@ def lanzar_o_instalar_minecraft(ui_elements):
 
     try:
         minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(version_id, MINECRAFT_DIRECTORY, options)
-        status_label.configure(text=f"Lanzando Minecraft {version_id}...", text_color="white")
-        app.update_idletasks()
         
-        subprocess.run(minecraft_command)
+        status_label.configure(text=f"Launching Minecraft {version_id}...", text_color="green")
         
-        status_label.configure(text="El juego se ha cerrado. ¡Listo para jugar de nuevo!", text_color="green")
+        game_thread = threading.Thread(target=_lanzar_juego_en_hilo, args=(minecraft_command, ui_elements))
+        game_thread.start()
+        
     except Exception as e:
-        status_label.configure(text=f"Error al lanzar: {e}", text_color="red")
+        status_label.configure(text=f"Error al preparar el lanzamiento: {e}", text_color="red")
