@@ -86,6 +86,9 @@ for version in display_versions:
     radio_button = customtkinter.CTkRadioButton(master=version_scroll_frame, text=version, variable=version_variable, value=version)
     radio_button.pack(fill="x", padx=10, pady=5)
 
+mostrar_snapshots = customtkinter.CTkCheckBox(master=frame01, text="Show Snapshots and other versions")
+mostrar_snapshots.grid(row=3, column=0, columnspan=2, padx=10, pady=10, sticky="w")
+
 frame01.columnconfigure(1, weight=1)
 
 # Frame 2: ram y Argumentos de Java
@@ -148,5 +151,6 @@ button01 = customtkinter.CTkButton(master=footer, text="Play / Install", width=1
 button01.pack(pady=20, padx=20)
 
 status_label.pack(pady=(0, 20), padx=10, side="bottom")
+
 
 app.mainloop()
