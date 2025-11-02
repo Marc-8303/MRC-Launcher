@@ -50,6 +50,36 @@ def cargar_configuracion():
             return {}
     return {}
 
+def actualizar_lista_versiones(ui_elements):
+    """
+    Limpia y vuelve a llenar la lista de versiones en la UI, basándose
+    en el estado del checkbox de snapshots.
+    """
+    version_scroll_frame = ui_elements["version_scroll_frame"]
+    show_snapshots = ui_elements["show_snapshots_checkbox"].get() == 1
+    version_variable = ui_elements["version_variable"]
+
+    for widget in version_scroll_frame.winfo_children():
+        widget.destroy()
+
+    display_versions = []
+    for version in ALL_VERSIONS_LIST:
+        version_id = version['id']
+        is_release = version['type'] == 'release'
+        
+        if is_release or show_snapshots:
+            if version_id in INSTALLED_VERSION_IDS:
+                display_versions.append(f"{version_id} (Installed)")
+            else:
+                display_versions.append(version_id)
+
+    for version in display_versions:
+        radio_button = customtkinter.CTkRadioButton(master=version_scroll_frame, text=version, variable=version_variable, value=version)
+        radio_button.pack(fill="x", padx=10, pady=5)
+    
+    if display_versions:
+        version_variable.set(display_versions[0])
+
 def load_initial_data():
     """
     Que hace?
@@ -294,4 +324,5 @@ def lanzar_o_instalar_minecraft(ui_elements):
         
     except Exception as e:
         status_label.configure(text=f"Error al preparar el lanzamiento: {e}", text_color="red")
+
 
