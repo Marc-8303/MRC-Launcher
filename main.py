@@ -139,7 +139,9 @@ ui_elements = {
     "slider_ram": slider_ram,
     "java_entry": java_entry,
     "status_label": status_label,
-    "skin_preview_label": skin_preview_label
+    "skin_preview_label": skin_preview_label,
+    "version_scroll_frame": version_scroll_frame,
+    "show_snapshots_checkbox": mostrar_snapshots,
 }
 
 skin_button.configure(command=lambda: launcher_logic.seleccionar_y_procesar_skin(ui_elements))
@@ -154,3 +156,4 @@ status_label.pack(pady=(0, 20), padx=10, side="bottom")
 
 
 app.mainloop()
+
