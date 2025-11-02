@@ -3,6 +3,8 @@ MRC Launcher is my attempt to make an simple launcher, with python.
 the objective is to make a good launcher, that will help you and give you
 the needed features to play minecraft correctly
 
+PD: also, im from peru, so my coments in the code are ussualy in spanish
+
 ## Key Features
 
 - 🔍 **Version Selector**: Select arround various versions of MC
