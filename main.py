@@ -131,6 +131,7 @@ if last_skin_path and os.path.exists(last_skin_path):
         skin_preview_label.image = initial_preview_image
 
 status_label = customtkinter.CTkLabel(master=app, text="Status: Ready to play!", font=("jetbrains mono", 12))
+launcher_logic.actualizar_lista_versiones(ui_elements)
 
 ui_elements = {
     "app": app,
@@ -156,4 +157,5 @@ status_label.pack(pady=(0, 20), padx=10, side="bottom")
 
 
 app.mainloop()
+
 
