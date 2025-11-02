@@ -18,6 +18,9 @@ CONFIG_FILE = "config.json"
 MINECRAFT_DIRECTORY = ""
 INSTALLED_VERSION_IDS = set()
 
+ALL_VERSIONS_LIST = []
+INSTALLED_VERSION_IDS = set()
+
 
 def guardar_configuracion(username, skin_path):
     """
@@ -291,3 +294,4 @@ def lanzar_o_instalar_minecraft(ui_elements):
         
     except Exception as e:
         status_label.configure(text=f"Error al preparar el lanzamiento: {e}", text_color="red")
+
