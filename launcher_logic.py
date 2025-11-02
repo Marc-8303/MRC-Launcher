@@ -7,6 +7,7 @@ import threading
 from tkinter import filedialog
 import customtkinter
 from PIL import Image
+from functools import partial
 
 """"
 Datos globales
@@ -14,15 +15,11 @@ Estas variables almacenan el estado de la aplicación para no tener que pasarlas
 
 Launcher creado por zkannek12 (Marcelo R) - 2025
 """
+
 CONFIG_FILE = "config.json"
 MINECRAFT_DIRECTORY = ""
-INSTALLED_VERSION_IDS = set()
 
-ALL_VERSIONS_LIST = []
-INSTALLED_VERSION_IDS = set()
-
-
-def guardar_configuracion(username, skin_path):
+def save_configuration(username, skin_path):
     """
     Que hace?
 
@@ -30,12 +27,11 @@ def guardar_configuracion(username, skin_path):
     """
     config = {"last_username": username, "last_skin_path": skin_path}
     try:
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=4)
+        with open(CONFIG_FILE, "w") as f: json.dump(config, f, indent=4)
     except Exception as e:
-        print(f"Error al guardar la configuración: {e}")
+        print(f"Error saving configuration: {e}")
 
-def cargar_configuracion():
+def load_configuration():
     """
     Que hace?
     
@@ -43,14 +39,50 @@ def cargar_configuracion():
     """
     if os.path.exists(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, "r") as f:
-                return json.load(f)
+            with open(CONFIG_FILE, "r") as f: return json.load(f)
         except Exception as e:
-            print(f"Error al cargar la configuración: {e}")
+            print(f"Error loading configuration: {e}")
             return {}
     return {}
 
-def actualizar_lista_versiones(ui_elements):
+def load_initial_data():
+    """
+    Que hace?
+    
+    Se encarga de crear el directorio de Minecraft si no existe y de cargar
+    la lista de versiones para mostrar en la UI.
+    """
+    global MINECRAFT_DIRECTORY
+    
+    try:
+        MINECRAFT_DIRECTORY = minecraft_launcher_lib.utils.get_minecraft_directory()
+        if not os.path.exists(MINECRAFT_DIRECTORY):
+            os.makedirs(os.path.join(MINECRAFT_DIRECTORY, "resourcepacks"), exist_ok=True)
+        all_versions = minecraft_launcher_lib.utils.get_version_list()
+        installed_versions = minecraft_launcher_lib.utils.get_installed_versions(MINECRAFT_DIRECTORY)
+        installed_ids = {v['id'] for v in installed_versions}
+        return all_versions, installed_ids
+    except Exception as e:
+        print(f"Error loading initial data: {e}")
+        return [], set()
+
+def _populate_versions_in_batches(scroll_frame, version_variable, versions_to_add, loading_label, index=0):
+    BATCH_SIZE = 15
+    count = 0
+    while count < BATCH_SIZE and index < len(versions_to_add):
+        version = versions_to_add[index]
+        radio_button = customtkinter.CTkRadioButton(master=scroll_frame, text=version, variable=version_variable, value=version)
+        radio_button.pack(fill="x", padx=10, pady=5)
+        count += 1
+        index += 1
+    if index < len(versions_to_add):
+        scroll_frame.after(10, partial(_populate_versions_in_batches, scroll_frame, version_variable, versions_to_add, loading_label, index))
+    else:
+        loading_label.destroy()
+        if versions_to_add:
+            version_variable.set(versions_to_add[0])
+
+def update_version_list(ui_elements, all_versions, installed_ids):
     """
     Limpia y vuelve a llenar la lista de versiones en la UI, basándose
     en el estado del checkbox de snapshots.
@@ -61,57 +93,22 @@ def actualizar_lista_versiones(ui_elements):
 
     for widget in version_scroll_frame.winfo_children():
         widget.destroy()
-
+    loading_label = customtkinter.CTkLabel(master=version_scroll_frame, text="Loading versions...")
+    loading_label.pack(pady=20)
     display_versions = []
-    for version in ALL_VERSIONS_LIST:
+
+    for version in all_versions:
         version_id = version['id']
         is_release = version['type'] == 'release'
-        
         if is_release or show_snapshots:
-            if version_id in INSTALLED_VERSION_IDS:
+            if version_id in installed_ids:
                 display_versions.append(f"{version_id} (Installed)")
             else:
                 display_versions.append(version_id)
-
-    for version in display_versions:
-        radio_button = customtkinter.CTkRadioButton(master=version_scroll_frame, text=version, variable=version_variable, value=version)
-        radio_button.pack(fill="x", padx=10, pady=5)
-    
-    if display_versions:
-        version_variable.set(display_versions[0])
-
-def load_initial_data():
-    """
-    Que hace?
-    
-    Se encarga de crear el directorio de Minecraft si no existe y de cargar
-    la lista de versiones para mostrar en la UI.
-    """
-    global MINECRAFT_DIRECTORY, INSTALLED_VERSION_IDS
-    try:
-        MINECRAFT_DIRECTORY = minecraft_launcher_lib.utils.get_minecraft_directory()
-        if not os.path.exists(MINECRAFT_DIRECTORY):
-            os.makedirs(MINECRAFT_DIRECTORY)
-            os.makedirs(os.path.join(MINECRAFT_DIRECTORY, "resourcepacks"), exist_ok=True)
-
-        all_versions = minecraft_launcher_lib.utils.get_version_list()
-        installed_versions = minecraft_launcher_lib.utils.get_installed_versions(MINECRAFT_DIRECTORY)
-        
-        INSTALLED_VERSION_IDS = {v['id'] for v in installed_versions}
-
-        display_versions = []
-        for version in all_versions:
-            if version['type'] == 'release':
-                version_id = version['id']
-                if version_id in INSTALLED_VERSION_IDS:
-                    display_versions.append(f"{version_id} (Installed)")
-                else:
-                    display_versions.append(version_id)
-        return display_versions
-    except Exception as e:
-        print(f"Error cargando datos iniciales: {e}")
-        return [f"Error al buscar: {e}"]
-
+    if not display_versions:
+        loading_label.configure(text="No versions found.")
+        return
+    _populate_versions_in_batches(version_scroll_frame, version_variable, display_versions, loading_label)
 
 def _create_skin_preview_image(path, size):
     """
@@ -122,58 +119,38 @@ def _create_skin_preview_image(path, size):
     """
     try:
         pillow_image = Image.open(path)
-        
-        ctk_image = customtkinter.CTkImage(
-            light_image=pillow_image,
-            dark_image=pillow_image, 
-            size=size
-        )
-        return ctk_image
+        return customtkinter.CTkImage(light_image=pillow_image, dark_image=pillow_image, size=size)
     except Exception as e:
-        print(f"Error al crear la imagen de preview: {e}")
+        print(f"Error creating preview image: {e}")
         return None
 
-def crear_paquete_de_skin(skin_path):
+def create_skin_resource_pack(skin_path):
     """
     Que hace?
 
     Crea un paquete de recursos .zip con la skin proporcionada.
     """
     pack_name = "MRC_Launcher_Skin"
-    temp_pack_dir = os.path.join("temp_pack_dir")
+    temp_pack_dir = "temp_pack_dir"
 
-    if os.path.exists(temp_pack_dir):
-        shutil.rmtree(temp_pack_dir)
-    
+    if os.path.exists(temp_pack_dir): shutil.rmtree(temp_pack_dir)
     try:
         steve_path = os.path.join(temp_pack_dir, "assets", "minecraft", "textures", "entity")
         os.makedirs(steve_path, exist_ok=True)
-
-        mcmeta_content = {
-            "pack": {
-                "pack_format": 15, 
-                "description": "Skin personalizada para MRC Launcher"
-            }
-        }
-        with open(os.path.join(temp_pack_dir, "pack.mcmeta"), "w") as f:
-            json.dump(mcmeta_content, f, indent=4)
-        
+        mcmeta = {"pack": {"pack_format": 15, "description": "Custom skin for MRC Launcher"}}
+        with open(os.path.join(temp_pack_dir, "pack.mcmeta"), "w") as f: json.dump(mcmeta, f, indent=4)
         shutil.copy(skin_path, os.path.join(steve_path, "steve.png"))
         shutil.copy(skin_path, os.path.join(steve_path, "alex.png"))
-
-        zip_output_path = os.path.join(MINECRAFT_DIRECTORY, "resourcepacks", pack_name)
-        shutil.make_archive(zip_output_path, 'zip', temp_pack_dir)
-        
-        print(f"Paquete de skin creado/actualizado en: {zip_output_path}.zip")
+        zip_path = os.path.join(MINECRAFT_DIRECTORY, "resourcepacks", pack_name)
+        shutil.make_archive(zip_path, 'zip', temp_pack_dir)
         return True
     except Exception as e:
-        print(f"Error creando el paquete de skin: {e}")
+        print(f"Error creating skin resource pack: {e}")
         return False
     finally:
-        if os.path.exists(temp_pack_dir):
-            shutil.rmtree(temp_pack_dir)
+        if os.path.exists(temp_pack_dir): shutil.rmtree(temp_pack_dir)
 
-def activar_paquete_de_skin():
+def enable_skin_resource_pack():
     """
     Que hace?
     
@@ -181,148 +158,114 @@ def activar_paquete_de_skin():
     """
     options_file = os.path.join(MINECRAFT_DIRECTORY, "options.txt")
     pack_name = "file/MRC_Launcher_Skin.zip"
-    
+
     try:
         if not os.path.exists(options_file):
-            with open(options_file, "w") as f:
-                f.write(f'resourcePacks:{json.dumps([pack_name])}\n')
+            with open(options_file, "w") as f: f.write(f'resourcePacks:{json.dumps([pack_name])}\n')
             return
-
-        with open(options_file, "r") as f:
-            lines = f.readlines()
-        
+        with open(options_file, "r") as f: lines = f.readlines()
         new_lines = []
         pack_found = False
         for line in lines:
             if line.startswith("resourcePacks:"):
-                import re
-                current_packs_str = line.split(":", 1)[1].strip()
-                current_packs = json.loads(current_packs_str)
-                if pack_name not in current_packs:
-                    current_packs.insert(0, pack_name)
-                new_line = f'resourcePacks:{json.dumps(current_packs)}\n'
-                new_lines.append(new_line)
+                current_packs = json.loads(line.split(":", 1)[1].strip())
+                if pack_name not in current_packs: current_packs.insert(0, pack_name)
+                new_lines.append(f'resourcePacks:{json.dumps(current_packs)}\n')
                 pack_found = True
             else:
                 new_lines.append(line)
-        
-        if not pack_found:
-             new_lines.append(f'resourcePacks:{json.dumps([pack_name])}\n')
-        
-        with open(options_file, "w") as f:
-            f.writelines(new_lines)
-        print("Paquete de skin activado en options.txt")
+        if not pack_found: new_lines.append(f'resourcePacks:{json.dumps([pack_name])}\n')
+        with open(options_file, "w") as f: f.writelines(new_lines)
     except Exception as e:
-        print(f"No se pudo activar el paquete de skin en options.txt: {e}")
+        print(f"Could not enable skin resource pack: {e}")
 
-def seleccionar_y_procesar_skin(ui_elements):
+def select_and_process_skin(ui_elements):
     """
     Que hace?
     
     Abre el diálogo de archivo, procesa la skin y actualiza la UI.
     """
-    skin_path = filedialog.askopenfilename(
-        title="Selecciona tu skin",
-        filetypes=[("Archivos PNG", "*.png")]
-    )
+    skin_path = filedialog.askopenfilename(title="Select your skin", filetypes=[("PNG Files", "*.png")])
     if skin_path:
-        if crear_paquete_de_skin(skin_path):
-            activar_paquete_de_skin()
-            
+        if create_skin_resource_pack(skin_path):
+            enable_skin_resource_pack()
             preview_label = ui_elements["skin_preview_label"]
-            new_preview_image = _create_skin_preview_image(skin_path, (128, 128))
-            if new_preview_image:
-                preview_label.configure(image=new_preview_image, text="")
-                preview_label.image = new_preview_image
-            
-            guardar_configuracion(ui_elements["username_entry"].get(), skin_path)
-            print("Skin procesada y guardada.")
+            new_preview = _create_skin_preview_image(skin_path, (64, 64))
+            if new_preview:
+                preview_label.configure(image=new_preview, text="")
+                preview_label.image = new_preview
+            save_configuration(ui_elements["username_entry"].get(), skin_path)
         else:
-            ui_elements["status_label"].configure(text="Error al procesar la skin.", text_color="red")
+            ui_elements["status_label"].configure(text="Error processing skin.", text_color="red")
 
-def actualizar_label_ram(valor, label_ram):
+def update_ram_label(value, ram_label):
     """
     Que hace?
     
     Actualiza la etiqueta de la RAM cuando se mueve el slider.
     """
-    ram_en_mb = int(valor)
-    label_ram.configure(text=f"Custom RAM Allocation: {ram_en_mb} MB")
+    ram_in_mb = int(value)
+    ram_label.configure(text=f"Custom RAM Allocation: {ram_in_mb} MB")
 
-def _lanzar_juego_en_hilo(minecraft_command, ui_elements):
+def _launch_game_in_thread(minecraft_command, ui_elements):
     """
     Esta función se ejecuta en un hilo separado para no bloquear la UI.
     Contiene la llamada bloqueante a subprocess.run().
     """
     try:
         subprocess.run(minecraft_command)
-        
-        # Una vez que el juego se cierra, actualizamos la UI de forma segura
-        ui_elements["app"].after(0, lambda: ui_elements["status_label"].configure(
-            text="El juego se ha cerrado. ¡Listo para jugar de nuevo!", text_color="green"))
-            
+        ui_elements["app"].after(0, lambda: ui_elements["status_label"].configure(text="Game closed. Ready to play again!", text_color="green"))
     except Exception as e:
-        print(f"Ocurrió un error en el hilo del juego: {e}")
-        ui_elements["app"].after(0, lambda: ui_elements["status_label"].configure(
-            text=f"Error al lanzar: {e}", text_color="red"))
+        print(f"An error occurred in the game thread: {e}")
+        ui_elements["app"].after(0, lambda: ui_elements["status_label"].configure(text=f"Error launching: {e}", text_color="red"))
 
-def lanzar_o_instalar_minecraft(ui_elements):
+def launch_or_install_minecraft(ui_elements, all_versions, installed_ids):
     """
     Función principal del botón "Jugar / Instalar". Ahora usa un hilo para lanzar el juego.
     """
     app = ui_elements["app"]
+
     username_entry = ui_elements["username_entry"]
     version_variable = ui_elements["version_variable"]
-    slider_ram = ui_elements["slider_ram"]
+
+    ram_slider = ui_elements["ram_slider"]
     java_entry = ui_elements["java_entry"]
+
     status_label = ui_elements["status_label"]
 
-    usuario = username_entry.get()
+    username = username_entry.get()
     selected_display_version = version_variable.get()
-    ram_mb = int(slider_ram.get())
+    ram_mb = int(ram_slider.get())
 
-    if not usuario:
-        status_label.configure(text="Error: El nombre de usuario no puede estar vacío.", text_color="red")
+    if not username:
+        status_label.configure(text="Error: Username cannot be empty.", text_color="red")
         return
-        
     version_id = selected_display_version.replace(" (Installed)", "")
-
-    if "Error al buscar" in version_id:
-        status_label.configure(text="Error: No se ha podido cargar la lista de versiones.", text_color="red")
+    if "Error al buscar" in version_id or not version_id:
+        status_label.configure(text="Error: No valid version selected.", text_color="red")
         return
-    
-    config = cargar_configuracion()
-    guardar_configuracion(usuario, config.get("last_skin_path", ""))
-
-    if version_id not in INSTALLED_VERSION_IDS:
+    config = load_configuration()
+    save_configuration(username, config.get("last_skin_path", ""))
+    if version_id not in installed_ids:
         try:
-            status_label.configure(text=f"Instalando {version_id}, por favor espera...", text_color="yellow")
+            status_label.configure(text=f"Installing {version_id}, please wait...", text_color="yellow")
             app.update_idletasks()
             minecraft_launcher_lib.install.install_minecraft_version(version_id, MINECRAFT_DIRECTORY)
-            INSTALLED_VERSION_IDS.add(version_id)
-            status_label.configure(text=f"¡{version_id} instalado con éxito!", text_color="green")
+            installed_ids.add(version_id)
+            status_label.configure(text=f"{version_id} installed successfully!", text_color="green")
+            update_version_list(ui_elements, all_versions, installed_ids)
             app.update_idletasks()
         except Exception as e:
-            status_label.configure(text=f"Error durante la instalación: {e}", text_color="red")
+            status_label.configure(text=f"Error during installation: {e}", text_color="red")
             return
-
-    options = {
-        "username": usuario, "uuid": "", "token": "",
-        "jvmArguments": [f"-Xmx{ram_mb}M", f"-Xms{ram_mb}M"]
-    }
+    options = {"username": username, "uuid": "", "token": "", "jvmArguments": [f"-Xmx{ram_mb}M", f"-Xms{ram_mb}M"]}
     java_args = java_entry.get()
     if java_args:
         options["jvmArguments"].extend(java_args.split())
-
     try:
         minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(version_id, MINECRAFT_DIRECTORY, options)
-        
         status_label.configure(text=f"Launching Minecraft {version_id}...", text_color="green")
-        
-        game_thread = threading.Thread(target=_lanzar_juego_en_hilo, args=(minecraft_command, ui_elements))
+        game_thread = threading.Thread(target=_launch_game_in_thread, args=(minecraft_command, ui_elements))
         game_thread.start()
-        
     except Exception as e:
-        status_label.configure(text=f"Error al preparar el lanzamiento: {e}", text_color="red")
-
-
+        status_label.configure(text=f"Error preparing launch: {e}", text_color="red")
