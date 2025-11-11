@@ -451,7 +451,7 @@ def launch_or_install_minecraft(ui_elements, all_versions, installed_ids):
 
         threading.Thread(
             target=_launch_game_in_thread,
-            args=(minecraft_command, update_queue),
+            args=(minecraft_command, update_queue, MINECRAFT_DIRECTORY),
             daemon=True,
         ).start()
 
@@ -459,3 +459,4 @@ def launch_or_install_minecraft(ui_elements, all_versions, installed_ids):
 
     except Exception as e:
         status_label.configure(text=f"Launch Error: {e}", text_color="red")
+
