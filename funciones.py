@@ -4,6 +4,7 @@ import subprocess
 import shutil
 import json
 import threading
+import logging
 import queue
 from functools import partial
 
@@ -366,11 +367,13 @@ def bind_version_change(ui_elements, selected_label):
     _on_change()
 
 
-def _launch_game_in_thread(minecraft_command, update_queue):
+def _launch_game_in_thread(minecraft_command, update_queue, minecraft_directory):
+    """Ejecuta el comando del juego en un hilo separado con el directorio de trabajo correcto."""
     try:
-        subprocess.run(minecraft_command)
+        subprocess.run(minecraft_command, cwd=minecraft_directory) 
         update_queue.put("GAME_CLOSED")
     except Exception as e:
+        logging.error(f"Fallo al ejecutar el proceso de Minecraft: {e}")
         update_queue.put(f"ERROR:{e}")
 
 
@@ -459,4 +462,3 @@ def launch_or_install_minecraft(ui_elements, all_versions, installed_ids):
 
     except Exception as e:
         status_label.configure(text=f"Launch Error: {e}", text_color="red")
-
